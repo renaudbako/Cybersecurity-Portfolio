@@ -3,4 +3,4 @@ I have successfully completed 50+ labs and scenarios involving Network Exploitat
 
 ![Rank](./rank.jpg)
 
-![Profile](./profile2.jpg)
+![Profile](./Profile2.jpg)
